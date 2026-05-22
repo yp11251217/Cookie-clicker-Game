@@ -1,25 +1,34 @@
 import streamlit as st
-import random
-import time
-from PIL import Image
 import os
+import time
+import random
+from PIL import Image
 
 # =========================================================
 # SETUP
 # =========================================================
-st.set_page_config(layout="centered")
+st.set_page_config(page_title="Asian Life RPG", layout="centered")
 
 WORLD_SIZE = 12
 VIEW = 5
 ASSET = "assets"
 
 # =========================================================
-# LOAD SPRITES
+# SAFE IMAGE LOADER (NO CRASH VERSION)
 # =========================================================
 @st.cache_data
 def img(name):
-    return Image.open(os.path.join(ASSET, name)).resize((48, 48))
+    path = os.path.join(ASSET, name)
 
+    if not os.path.exists(path):
+        # fallback placeholder tile (prevents crash)
+        return Image.new("RGB", (48, 48), (200, 50, 50))
+
+    return Image.open(path).resize((48, 48))
+
+# =========================================================
+# SPRITES
+# =========================================================
 player = img("player.png")
 grass = img("grass.png")
 home = img("home.png")
@@ -31,7 +40,7 @@ npc_student = img("npc_student.png")
 npc_teacher = img("npc_teacher.png")
 
 # =========================================================
-# INIT
+# INIT STATE
 # =========================================================
 def init():
     defaults = {
@@ -42,8 +51,7 @@ def init():
         "stress": 20,
         "happiness": 50,
 
-        "dialogue": "You wake up in a competitive world...",
-        "last_event": time.time(),
+        "dialogue": "You enter a competitive life world...",
 
         "npc": {
             (3, 3): "student",
@@ -58,7 +66,7 @@ def init():
 init()
 
 # =========================================================
-# WORLD TILES
+# ZONES (MAP TILES)
 # =========================================================
 zones = {
     (2, 2): school,
@@ -78,61 +86,66 @@ def camera():
     half = VIEW // 2
     cx, cy = st.session_state.x, st.session_state.y
 
-    return (
-        max(0, cx - half),
-        min(WORLD_SIZE - 1, cx + half),
-        max(0, cy - half),
-        min(WORLD_SIZE - 1, cy + half),
-    )
+    minx = max(0, cx - half)
+    maxx = min(WORLD_SIZE - 1, cx + half)
+    miny = max(0, cy - half)
+    maxy = min(WORLD_SIZE - 1, cy + half)
+
+    return minx, maxx, miny, maxy
 
 # =========================================================
-# MOVEMENT (RPG STEP FEEL)
+# MOVE SYSTEM
 # =========================================================
 def move(dx, dy):
     st.session_state.x = max(0, min(WORLD_SIZE - 1, st.session_state.x + dx))
     st.session_state.y = max(0, min(WORLD_SIZE - 1, st.session_state.y + dy))
 
     st.session_state.stress += 1
-
-    st.session_state.dialogue = "You move through the world..."
+    st.session_state.dialogue = "You move through life..."
 
 # =========================================================
-# NPC CHECK
+# NPC SYSTEM
 # =========================================================
 def npc_at(x, y):
     return st.session_state.npc.get((x, y), None)
 
 # =========================================================
-# INTERACTION SYSTEM (RPG CORE)
+# INTERACTION SYSTEM
 # =========================================================
 def interact():
     x, y = st.session_state.x, st.session_state.y
     npc = npc_at(x, y)
+    tile = get_tile(x, y)
 
     if npc == "student":
-        st.session_state.dialogue = "Student: 'I studied 12 hours yesterday...'"
+        st.session_state.dialogue = "Student: 'I studied 10 hours yesterday...'"
         st.session_state.stress += 2
 
     elif npc == "teacher":
-        st.session_state.dialogue = "Teacher: 'Why is your score not 100?'"
+        st.session_state.dialogue = "Teacher: 'Why not 100 marks?'"
         st.session_state.stress += 5
 
-    elif get_tile(x, y) == school:
-        st.session_state.dialogue = "You attend a silent competitive class."
+    elif tile == school:
+        st.session_state.dialogue = "You attend class. Pressure builds."
         st.session_state.iq += 2
         st.session_state.stress += 2
 
-    elif get_tile(x, y) == home:
-        st.session_state.dialogue = "Home feels quiet... but expectations remain."
+    elif tile == home:
+        st.session_state.dialogue = "Home feels quiet but expectations remain."
         st.session_state.happiness += 1
 
+    elif tile == park:
+        st.session_state.dialogue = "You feel slightly relieved."
+        st.session_state.happiness += 3
+        st.session_state.stress -= 2
+
     else:
-        st.session_state.dialogue = "Nothing happens..."
+        st.session_state.dialogue = "Nothing important happens."
 
 # =========================================================
-# RENDER WORLD (RPG CAMERA VIEW)
+# RENDER WORLD (CAMERA VIEW)
 # =========================================================
-def render():
+def render_world():
     minx, maxx, miny, maxy = camera()
 
     grid = []
@@ -165,14 +178,14 @@ def draw(grid):
 # =========================================================
 # UI
 # =========================================================
-st.title("🎮 Asian Life RPG")
+st.title("🎮 Asian Life RPG (Final Version)")
 
-st.write("🧭 Explore the world. Interact. Survive expectations.")
+st.write("🧭 Move, interact, and survive expectations.")
 
-draw(render())
+draw(render_world())
 
 # =========================================================
-# CONTROLS (RPG STYLE)
+# CONTROLS
 # =========================================================
 c1, c2, c3 = st.columns(3)
 
@@ -180,6 +193,7 @@ with c1:
     if st.button("⬅️"):
         move(-1, 0)
         st.rerun()
+
     if st.button("⬇️"):
         move(0, 1)
         st.rerun()
@@ -195,7 +209,7 @@ with c3:
         st.rerun()
 
 # =========================================================
-# ACTIONS (RPG BUTTON)
+# ACTIONS
 # =========================================================
 st.markdown("### 🎮 Actions")
 
@@ -204,20 +218,18 @@ if st.button("🗣️ Interact"):
     st.rerun()
 
 # =========================================================
-# RPG DIALOGUE BOX
+# DIALOGUE BOX
 # =========================================================
 st.markdown("---")
-
 st.markdown("### 📜 Story")
 st.info(st.session_state.dialogue)
 
 # =========================================================
-# STATS (RPG HUD)
+# STATS HUD
 # =========================================================
 st.markdown("### 📊 Status")
 
-col1, col2, col3 = st.columns(3)
-
-col1.metric("🧠 IQ", st.session_state.iq)
-col2.metric("😰 Stress", st.session_state.stress)
-col3.metric("😊 Happiness", st.session_state.happiness)
+c1, c2, c3 = st.columns(3)
+c1.metric("🧠 IQ", st.session_state.iq)
+c2.metric("😰 Stress", st.session_state.stress)
+c3.metric("😊 Happiness", st.session_state.happiness)
