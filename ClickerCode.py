@@ -1,39 +1,54 @@
 import streamlit as st
 import random
 import time
+from PIL import Image
+import os
 
 # =========================================================
 # SETUP
 # =========================================================
-st.set_page_config(page_title="Asian Life Simulator", layout="centered")
+st.set_page_config(layout="centered")
 
-WORLD_SIZE = 11
-
-PRESSURE_INTERVAL = 180   # every 3 minutes
-PRESSURE_DURATION = 120   # 2 minutes
+WORLD_SIZE = 12
+VIEW = 5
+ASSET = "assets"
 
 # =========================================================
-# INIT STATE
+# LOAD SPRITES
+# =========================================================
+@st.cache_data
+def img(name):
+    return Image.open(os.path.join(ASSET, name)).resize((48, 48))
+
+player = img("player.png")
+grass = img("grass.png")
+home = img("home.png")
+school = img("school.png")
+park = img("park.png")
+city = img("city.png")
+
+npc_student = img("npc_student.png")
+npc_teacher = img("npc_teacher.png")
+
+# =========================================================
+# INIT
 # =========================================================
 def init():
     defaults = {
-        "x": 5,
-        "y": 5,
+        "x": 6,
+        "y": 6,
 
         "iq": 50,
         "stress": 20,
         "happiness": 50,
-        "money": 0,
 
-        "grade": 70,  # academic performance score
+        "dialogue": "You wake up in a competitive world...",
+        "last_event": time.time(),
 
-        "message": "You were born into the system 🏫",
-
-        # pressure system
-        "pressure_active": False,
-        "last_pressure_time": time.time(),
-        "pressure_start_time": 0,
-        "pressure_type": None,
+        "npc": {
+            (3, 3): "student",
+            (8, 8): "teacher",
+        }
     }
 
     for k, v in defaults.items():
@@ -43,188 +58,121 @@ def init():
 init()
 
 # =========================================================
-# ZONES
+# WORLD TILES
 # =========================================================
 zones = {
-    (5, 5): "🏠 Home",
-    (2, 2): "🏫 School",
-    (8, 2): "📚 Tuition",
-    (2, 8): "🌳 Park",
-    (8, 8): "🏙️ City",
+    (2, 2): school,
+    (6, 6): home,
+    (9, 2): school,
+    (2, 9): park,
+    (9, 9): city,
 }
 
+def get_tile(x, y):
+    return zones.get((x, y), grass)
+
 # =========================================================
-# MOVE SYSTEM
+# CAMERA SYSTEM (RPG FEEL)
+# =========================================================
+def camera():
+    half = VIEW // 2
+    cx, cy = st.session_state.x, st.session_state.y
+
+    return (
+        max(0, cx - half),
+        min(WORLD_SIZE - 1, cx + half),
+        max(0, cy - half),
+        min(WORLD_SIZE - 1, cy + half),
+    )
+
+# =========================================================
+# MOVEMENT (RPG STEP FEEL)
 # =========================================================
 def move(dx, dy):
     st.session_state.x = max(0, min(WORLD_SIZE - 1, st.session_state.x + dx))
     st.session_state.y = max(0, min(WORLD_SIZE - 1, st.session_state.y + dy))
 
     st.session_state.stress += 1
-    st.session_state.message = "You moved."
+
+    st.session_state.dialogue = "You move through the world..."
 
 # =========================================================
-# ZONE DETECTION
+# NPC CHECK
 # =========================================================
-def get_zone():
-    return zones.get((st.session_state.x, st.session_state.y), "🟫 Street")
+def npc_at(x, y):
+    return st.session_state.npc.get((x, y), None)
 
 # =========================================================
-# PRESSURE EVENT SYSTEM (CORE GAME LOOP)
+# INTERACTION SYSTEM (RPG CORE)
 # =========================================================
-def update_pressure_system():
-    now = time.time()
+def interact():
+    x, y = st.session_state.x, st.session_state.y
+    npc = npc_at(x, y)
 
-    # START PRESSURE EVENT
-    if not st.session_state.pressure_active:
-        if now - st.session_state.last_pressure_time >= PRESSURE_INTERVAL:
+    if npc == "student":
+        st.session_state.dialogue = "Student: 'I studied 12 hours yesterday...'"
+        st.session_state.stress += 2
 
-            st.session_state.pressure_active = True
-            st.session_state.pressure_start_time = now
+    elif npc == "teacher":
+        st.session_state.dialogue = "Teacher: 'Why is your score not 100?'"
+        st.session_state.stress += 5
 
-            st.session_state.pressure_type = random.choice([
-                "📚 Exam Week",
-                "🧑‍🏫 Tuition Overload",
-                "👨‍👩‍👧 Parental Expectations",
-            ])
+    elif get_tile(x, y) == school:
+        st.session_state.dialogue = "You attend a silent competitive class."
+        st.session_state.iq += 2
+        st.session_state.stress += 2
 
-            st.session_state.message = f"⚠️ {st.session_state.pressure_type} has started!"
+    elif get_tile(x, y) == home:
+        st.session_state.dialogue = "Home feels quiet... but expectations remain."
+        st.session_state.happiness += 1
 
-    # END PRESSURE EVENT
     else:
-        if now - st.session_state.pressure_start_time >= PRESSURE_DURATION:
-            st.session_state.pressure_active = False
-            st.session_state.last_pressure_time = now
-            st.session_state.pressure_type = None
-            st.session_state.message = "Pressure period ended. You can breathe again."
+        st.session_state.dialogue = "Nothing happens..."
 
 # =========================================================
-# PRESSURE EFFECTS (THIS IS THE "GAMEPLAY")
+# RENDER WORLD (RPG CAMERA VIEW)
 # =========================================================
-def apply_pressure_effects():
-    if not st.session_state.pressure_active:
-        return
+def render():
+    minx, maxx, miny, maxy = camera()
 
-    p = st.session_state.pressure_type
+    grid = []
 
-    # passive stress increase
-    st.session_state.stress += 0.3
+    for y in range(miny, maxy + 1):
+        row = []
 
-    if p == "📚 Exam Week":
-        st.session_state.iq += 0.2
-        st.session_state.stress += 0.2
-        st.session_state.grade += 0.3
-
-    elif p == "🧑‍🏫 Tuition Overload":
-        st.session_state.iq += 0.4
-        st.session_state.money -= 0.1
-        st.session_state.stress += 0.5
-
-    elif p == "👨‍👩‍👧 Parental Expectations":
-        st.session_state.stress += 0.7
-        st.session_state.happiness -= 0.3
-
-# =========================================================
-# ACTIONS BY ZONE
-# =========================================================
-def actions():
-    zone = get_zone()
-
-    st.markdown("### 🎮 Actions")
-
-    if zone == "🏠 Home":
-        if st.button("😴 Rest"):
-            st.session_state.happiness += 5
-            st.session_state.stress -= 5
-            st.session_state.message = "You rested at home."
-            st.rerun()
-
-        if st.button("📖 Self Study"):
-            st.session_state.iq += 2
-            st.session_state.stress += 3
-            st.session_state.grade += 1
-            st.session_state.message = "You studied alone."
-            st.rerun()
-
-    elif zone == "🏫 School":
-        if st.button("📝 Attend Class"):
-            st.session_state.grade += 3
-            st.session_state.stress += 2
-            st.session_state.message = "You attended school."
-            st.rerun()
-
-    elif zone == "📚 Tuition":
-        if st.button("📚 Extra Study"):
-            st.session_state.iq += 5
-            st.session_state.stress += 6
-            st.session_state.grade += 4
-            st.session_state.message = "Tuition grind activated."
-            st.rerun()
-
-    elif zone == "🌳 Park":
-        if st.button("😌 Relax"):
-            st.session_state.happiness += 10
-            st.session_state.stress -= 10
-            st.session_state.message = "You recovered mentally."
-            st.rerun()
-
-    elif zone == "🏙️ City":
-        if st.button("💼 Part-time Job"):
-            earn = random.randint(20, 80)
-            st.session_state.money += earn
-            st.session_state.stress += 5
-            st.session_state.happiness -= 2
-            st.session_state.message = f"You earned ${earn}"
-            st.rerun()
-
-# =========================================================
-# MAP
-# =========================================================
-def draw_map():
-    grid = ""
-
-    for y in range(WORLD_SIZE):
-        for x in range(WORLD_SIZE):
+        for x in range(minx, maxx + 1):
 
             if x == st.session_state.x and y == st.session_state.y:
-                grid += "🧍"
+                row.append(player)
 
-            elif st.session_state.pressure_active and random.random() < 0.02:
-                grid += "⚠️"
-
-            elif (x, y) in zones:
-                grid += "🏫"
+            elif (x, y) in st.session_state.npc:
+                if st.session_state.npc[(x, y)] == "student":
+                    row.append(npc_student)
+                else:
+                    row.append(npc_teacher)
 
             else:
-                grid += "⬜"
+                row.append(get_tile(x, y))
 
-        grid += "\n"
+        grid.append(row)
 
     return grid
 
-# =========================================================
-# GAME LOOP
-# =========================================================
-update_pressure_system()
-apply_pressure_effects()
+def draw(grid):
+    for row in grid:
+        st.image(row)
 
 # =========================================================
 # UI
 # =========================================================
-st.title("🎓 Asian Life Simulator")
+st.title("🎮 Asian Life RPG")
 
-st.subheader(f"📍 Location: {get_zone()}")
-st.write(st.session_state.message)
+st.write("🧭 Explore the world. Interact. Survive expectations.")
 
-if st.session_state.pressure_active:
-    st.error(f"⚠️ ACTIVE: {st.session_state.pressure_type}")
-else:
-    st.success("🙂 Normal life period")
-
-st.text(draw_map())
+draw(render())
 
 # =========================================================
-# CONTROLS
+# CONTROLS (RPG STYLE)
 # =========================================================
 c1, c2, c3 = st.columns(3)
 
@@ -232,7 +180,6 @@ with c1:
     if st.button("⬅️"):
         move(-1, 0)
         st.rerun()
-
     if st.button("⬇️"):
         move(0, 1)
         st.rerun()
@@ -248,34 +195,29 @@ with c3:
         st.rerun()
 
 # =========================================================
-# ACTIONS
+# ACTIONS (RPG BUTTON)
 # =========================================================
-actions()
+st.markdown("### 🎮 Actions")
+
+if st.button("🗣️ Interact"):
+    interact()
+    st.rerun()
 
 # =========================================================
-# STATS
+# RPG DIALOGUE BOX
 # =========================================================
 st.markdown("---")
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("🧠 IQ", round(st.session_state.iq))
-c2.metric("😰 Stress", round(st.session_state.stress))
-c3.metric("😊 Happiness", round(st.session_state.happiness))
-c4.metric("📊 Grade", round(st.session_state.grade))
-
-st.metric("💰 Money", round(st.session_state.money))
+st.markdown("### 📜 Story")
+st.info(st.session_state.dialogue)
 
 # =========================================================
-# ENDINGS
+# STATS (RPG HUD)
 # =========================================================
-if st.session_state.grade >= 150:
-    st.success("🎓 Top Student Ending Unlocked")
+st.markdown("### 📊 Status")
 
-elif st.session_state.stress >= 120:
-    st.error("💥 Burnout Ending")
+col1, col2, col3 = st.columns(3)
 
-elif st.session_state.happiness <= 10:
-    st.warning("😐 Empty Life Ending")
-
-elif st.session_state.money >= 500:
-    st.success("💼 Financial Stability Ending")
+col1.metric("🧠 IQ", st.session_state.iq)
+col2.metric("😰 Stress", st.session_state.stress)
+col3.metric("😊 Happiness", st.session_state.happiness)
