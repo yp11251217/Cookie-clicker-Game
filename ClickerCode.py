@@ -1,235 +1,154 @@
 import streamlit as st
-import os
-import time
 import random
-from PIL import Image
 
-# =========================================================
-# SETUP
-# =========================================================
-st.set_page_config(page_title="Asian Life RPG", layout="centered")
+# -----------------------------
+# GAME STATE INIT
+# -----------------------------
+if "distance" not in st.session_state:
+    st.session_state.distance = 10  # teacher distance (0 = caught)
 
-WORLD_SIZE = 12
-VIEW = 5
-ASSET = "assets"
+if "level" not in st.session_state:
+    st.session_state.level = 1
 
-# =========================================================
-# SAFE IMAGE LOADER (NO CRASH VERSION)
-# =========================================================
-@st.cache_data
-def img(name):
-    path = os.path.join(ASSET, name)
+if "weapon" not in st.session_state:
+    st.session_state.weapon = None
 
-    if not os.path.exists(path):
-        # fallback placeholder tile (prevents crash)
-        return Image.new("RGB", (48, 48), (200, 50, 50))
+if "damage" not in st.session_state:
+    st.session_state.damage = 0
 
-    return Image.open(path).resize((48, 48))
+if "question" not in st.session_state:
+    st.session_state.question = None
 
-# =========================================================
-# SPRITES
-# =========================================================
-player = img("player.png")
-grass = img("grass.png")
-home = img("home.png")
-school = img("school.png")
-park = img("park.png")
-city = img("city.png")
+if "answer" not in st.session_state:
+    st.session_state.answer = None
 
-npc_student = img("npc_student.png")
-npc_teacher = img("npc_teacher.png")
+if "message" not in st.session_state:
+    st.session_state.message = ""
 
-# =========================================================
-# INIT STATE
-# =========================================================
-def init():
-    defaults = {
-        "x": 6,
-        "y": 6,
 
-        "iq": 50,
-        "stress": 20,
-        "happiness": 50,
+# -----------------------------
+# QUESTION GENERATOR
+# -----------------------------
+def generate_question(level):
+    if level == 1:
+        n = random.randint(5, 8)
+        r = random.randint(2, 4)
+        q = f"How many permutations of {n} items taken {r} at a time?"
+        a = factorial(n) // factorial(n - r)
 
-        "dialogue": "You enter a competitive life world...",
-
-        "npc": {
-            (3, 3): "student",
-            (8, 8): "teacher",
-        }
-    }
-
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-init()
-
-# =========================================================
-# ZONES (MAP TILES)
-# =========================================================
-zones = {
-    (2, 2): school,
-    (6, 6): home,
-    (9, 2): school,
-    (2, 9): park,
-    (9, 9): city,
-}
-
-def get_tile(x, y):
-    return zones.get((x, y), grass)
-
-# =========================================================
-# CAMERA SYSTEM (RPG FEEL)
-# =========================================================
-def camera():
-    half = VIEW // 2
-    cx, cy = st.session_state.x, st.session_state.y
-
-    minx = max(0, cx - half)
-    maxx = min(WORLD_SIZE - 1, cx + half)
-    miny = max(0, cy - half)
-    maxy = min(WORLD_SIZE - 1, cy + half)
-
-    return minx, maxx, miny, maxy
-
-# =========================================================
-# MOVE SYSTEM
-# =========================================================
-def move(dx, dy):
-    st.session_state.x = max(0, min(WORLD_SIZE - 1, st.session_state.x + dx))
-    st.session_state.y = max(0, min(WORLD_SIZE - 1, st.session_state.y + dy))
-
-    st.session_state.stress += 1
-    st.session_state.dialogue = "You move through life..."
-
-# =========================================================
-# NPC SYSTEM
-# =========================================================
-def npc_at(x, y):
-    return st.session_state.npc.get((x, y), None)
-
-# =========================================================
-# INTERACTION SYSTEM
-# =========================================================
-def interact():
-    x, y = st.session_state.x, st.session_state.y
-    npc = npc_at(x, y)
-    tile = get_tile(x, y)
-
-    if npc == "student":
-        st.session_state.dialogue = "Student: 'I studied 10 hours yesterday...'"
-        st.session_state.stress += 2
-
-    elif npc == "teacher":
-        st.session_state.dialogue = "Teacher: 'Why not 100 marks?'"
-        st.session_state.stress += 5
-
-    elif tile == school:
-        st.session_state.dialogue = "You attend class. Pressure builds."
-        st.session_state.iq += 2
-        st.session_state.stress += 2
-
-    elif tile == home:
-        st.session_state.dialogue = "Home feels quiet but expectations remain."
-        st.session_state.happiness += 1
-
-    elif tile == park:
-        st.session_state.dialogue = "You feel slightly relieved."
-        st.session_state.happiness += 3
-        st.session_state.stress -= 2
+    elif level == 2:
+        n = random.randint(6, 10)
+        r = random.randint(2, 5)
+        q = f"How many combinations of {n} items taken {r} at a time?"
+        a = factorial(n) // (factorial(r) * factorial(n - r))
 
     else:
-        st.session_state.dialogue = "Nothing important happens."
+        n = random.randint(5, 9)
+        r = random.randint(2, 5)
+        q = f"In how many ways can you arrange {r} items from {n} distinct items in a circle?"
+        a = factorial(r - 1) * combination(n, r)
 
-# =========================================================
-# RENDER WORLD (CAMERA VIEW)
-# =========================================================
-def render_world():
-    minx, maxx, miny, maxy = camera()
+    return q, a
 
-    grid = []
 
-    for y in range(miny, maxy + 1):
-        row = []
+def factorial(x):
+    return 1 if x == 0 else x * factorial(x - 1)
 
-        for x in range(minx, maxx + 1):
 
-            if x == st.session_state.x and y == st.session_state.y:
-                row.append(player)
+def combination(n, r):
+    return factorial(n) // (factorial(r) * factorial(n - r))
 
-            elif (x, y) in st.session_state.npc:
-                if st.session_state.npc[(x, y)] == "student":
-                    row.append(npc_student)
-                else:
-                    row.append(npc_teacher)
 
-            else:
-                row.append(get_tile(x, y))
+# -----------------------------
+# WEAPON SYSTEM
+# -----------------------------
+def get_weapon():
+    weapons = [
+        ("Pencil Sword ✏️", 5),
+        ("Notebook Shield 📒", 8),
+        ("Protractor Blade 📐", 12),
+        ("Calculator Cannon 🔢", 20),
+        ("Final Exam Laser 💥", 35),
+    ]
+    return random.choice(weapons)
 
-        grid.append(row)
 
-    return grid
+# -----------------------------
+# GAME LOGIC
+# -----------------------------
+def next_question():
+    q, a = generate_question(st.session_state.level)
+    st.session_state.question = q
+    st.session_state.answer = a
 
-def draw(grid):
-    for row in grid:
-        st.image(row)
 
-# =========================================================
+def check_answer(user_answer):
+    try:
+        user_answer = int(user_answer)
+    except:
+        st.session_state.message = "❌ Invalid input!"
+        return
+
+    if user_answer == st.session_state.answer:
+        st.session_state.message = "✅ Correct! You move forward!"
+
+        st.session_state.distance += 1
+        st.session_state.level += 1
+
+        # reward weapon
+        weapon, dmg = get_weapon()
+        st.session_state.weapon = weapon
+        st.session_state.damage = dmg
+
+        st.session_state.message += f" You picked up {weapon} (Damage {dmg})"
+
+    else:
+        st.session_state.message = "❌ Wrong! Teacher is getting closer!"
+        st.session_state.distance -= 2
+
+
+# -----------------------------
 # UI
-# =========================================================
-st.title("🎮 Asian Life RPG (Final Version)")
+# -----------------------------
+st.title("🏫 Permutation & Combination Escape Game")
+st.write("A teacher is chasing you! Answer correctly to escape and collect weapons.")
 
-st.write("🧭 Move, interact, and survive expectations.")
+st.progress(st.session_state.distance / 20)
 
-draw(render_world())
+st.write(f"👨‍🏫 Teacher Distance: {st.session_state.distance}")
+st.write(f"📊 Level: {st.session_state.level}")
 
-# =========================================================
-# CONTROLS
-# =========================================================
-c1, c2, c3 = st.columns(3)
+if st.session_state.distance <= 0:
+    st.error("💀 You got caught by the teacher!")
+    st.stop()
 
-with c1:
-    if st.button("⬅️"):
-        move(-1, 0)
-        st.rerun()
+if st.session_state.distance >= 20:
+    st.success("🎉 You escaped the school!")
+    st.stop()
 
-    if st.button("⬇️"):
-        move(0, 1)
-        st.rerun()
+if st.session_state.question is None:
+    next_question()
 
-with c2:
-    if st.button("⬆️"):
-        move(0, -1)
-        st.rerun()
+st.subheader("🧠 Question")
+st.write(st.session_state.question)
 
-with c3:
-    if st.button("➡️"):
-        move(1, 0)
-        st.rerun()
+user_answer = st.text_input("Your Answer:")
 
-# =========================================================
-# ACTIONS
-# =========================================================
-st.markdown("### 🎮 Actions")
+if st.button("Submit"):
+    check_answer(user_answer)
+    next_question()
 
-if st.button("🗣️ Interact"):
-    interact()
-    st.rerun()
+st.write(st.session_state.message)
 
-# =========================================================
-# DIALOGUE BOX
-# =========================================================
-st.markdown("---")
-st.markdown("### 📜 Story")
-st.info(st.session_state.dialogue)
+# -----------------------------
+# FINAL ESCAPE MODE
+# -----------------------------
+if st.session_state.level > 5:
+    st.markdown("## 🔥 Final Boss: Teacher Attack Mode")
 
-# =========================================================
-# STATS HUD
-# =========================================================
-st.markdown("### 📊 Status")
+    st.write("Use your weapon to fight back!")
 
-c1, c2, c3 = st.columns(3)
-c1.metric("🧠 IQ", st.session_state.iq)
-c2.metric("😰 Stress", st.session_state.stress)
-c3.metric("😊 Happiness", st.session_state.happiness)
+    if st.button("Attack Teacher"):
+        damage = st.session_state.damage
+        st.session_state.distance += damage // 5
+        st.success(f"You attacked using {st.session_state.weapon} dealing {damage} damage!")
